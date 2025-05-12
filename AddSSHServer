@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# === Settings ===
+CONFIG_DIR="$HOME/.ssh/config.d"
+ALIAS_NAME="addsshpro"
+
+mkdir -p "$CONFIG_DIR"
+
+# === Functions ===
+
+create_config() {
+    local SERVER_NAME=$1
+    local IP_ADDRESS=$2
+    local SSH_USER=$3
+    local SSH_PORT=$4
+    local SSH_KEY=$5
+
+    local CONFIG_FILE="$CONFIG_DIR/${SERVER_NAME}.conf"
+
+    if [[ -f "$CONFIG_FILE" ]]; then
+        echo "⚠️  Warning: $CONFIG_FILE already exists! Skipping..."
+        return
+    fi
+
+    cat > "$CONFIG_FILE" <<EOL
+Host $SERVER_NAME
+    HostName $IP_ADDRESS
+    User $SSH_USER
+    Port $SSH_PORT
+    IdentityFile $SSH_KEY
+EOL
+
+    echo "✅ Created: $CONFIG_FILE"
+}
+
+manual_mode() {
+    read -p "Server Name (Example: TeslaServer): " SERVER_NAME
+    read -p "IP Address (Example: 223.234.456.224): " IP_ADDRESS
+    read -p "SSH User (default 'root'): " SSH_USER
+    SSH_USER=${SSH_USER:-root}
+    read -p "SSH Port (default '22'): " SSH_PORT
+    SSH_PORT=${SSH_PORT:-22}
+    read -p "Path to SSH Key (default '~/.ssh/id_rsa'): " SSH_KEY
+    SSH_KEY=${SSH_KEY:-~/.ssh/id_rsa}
+
+    create_config "$SERVER_NAME" "$IP_ADDRESS" "$SSH_USER" "$SSH_PORT" "$SSH_KEY"
+}
+
+
+# === Main ===
+echo "=============================="
+echo " SSH Config Creator PRO "
+echo "=============================="
+
+
+manual_mode
+

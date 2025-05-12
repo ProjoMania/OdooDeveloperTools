@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# === Settings ===
+CONFIG_DIR="$HOME/.ssh/config.d"
+
+if [[ ! -d "$CONFIG_DIR" ]]; then
+    echo "❌ No config.d directory found at $CONFIG_DIR"
+    exit 1
+fi
+
+echo "=============================================================="
+echo "    🖥️  Saved SSH Servers"
+echo "=============================================================="
+printf "%-20s %-20s %-15s\n" "Server Name" "IP Address" "User"
+echo "---------------------------------------------------------------"
+
+for file in "$CONFIG_DIR"/*.conf; do
+    if [[ -f "$file" ]]; then
+        # Initialize empty values
+        SERVER_NAME=""
+        IP_ADDRESS=""
+        SSH_USER=""
+
+        while IFS= read -r line; do
+            # Trim leading whitespace for pattern matching
+            trimmed_line=$(echo "$line" | sed 's/^[[:space:]]*//')
+            
+            if [[ "$trimmed_line" =~ ^Host[[:space:]]+(.+) ]]; then
+                SERVER_NAME="${BASH_REMATCH[1]}"
+            elif [[ "$trimmed_line" =~ ^HostName[[:space:]]+(.+) ]]; then
+                IP_ADDRESS="${BASH_REMATCH[1]}"
+            elif [[ "$trimmed_line" =~ ^User[[:space:]]+(.+) ]]; then
+                SSH_USER="${BASH_REMATCH[1]}"
+            fi
+        done < "$file"
+
+        printf "%-20s %-20s %-15s\n" "$SERVER_NAME" "$IP_ADDRESS" "$SSH_USER"
+    fi
+done
+

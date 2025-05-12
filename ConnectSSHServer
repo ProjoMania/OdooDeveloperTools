@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# === Settings ===
+CONFIG_DIR="$HOME/.ssh/config.d"
+
+if [[ ! -d "$CONFIG_DIR" ]]; then
+    echo "❌ No config.d directory found at $CONFIG_DIR"
+    exit 1
+fi
+
+# === Load servers ===
+SERVER_LIST=()
+HOST_LIST=()
+
+for file in "$CONFIG_DIR"/*.conf; do
+    if [[ -f "$file" ]]; then
+        # Initialize variables
+        SERVER_NAME=""
+        IP_ADDRESS=""
+        SSH_USER=""
+        
+        # Read file line by line
+        while IFS= read -r line; do
+            # Trim leading whitespace for pattern matching
+            trimmed_line=$(echo "$line" | sed 's/^[[:space:]]*//')
+            
+            if [[ "$trimmed_line" =~ ^Host[[:space:]]+(.+) ]]; then
+                SERVER_NAME="${BASH_REMATCH[1]}"
+            elif [[ "$trimmed_line" =~ ^HostName[[:space:]]+(.+) ]]; then
+                IP_ADDRESS="${BASH_REMATCH[1]}"
+            elif [[ "$trimmed_line" =~ ^User[[:space:]]+(.+) ]]; then
+                SSH_USER="${BASH_REMATCH[1]}"
+            fi
+        done < "$file"
+        
+        if [[ -n "$SERVER_NAME" && -n "$IP_ADDRESS" ]]; then
+            SERVER_LIST+=("$SERVER_NAME - $IP_ADDRESS as $SSH_USER")
+            HOST_LIST+=("$SERVER_NAME")
+        fi
+    fi
+done
+
+# === No servers found ===
+if [[ ${#SERVER_LIST[@]} -eq 0 ]]; then
+    echo "❌ No servers found in $CONFIG_DIR"
+    exit 1
+fi
+
+# === Display Menu ===
+echo "=============================="
+echo "      🖥️  Quick SSH Connect"
+echo "=============================="
+
+for i in "${!SERVER_LIST[@]}"; do
+    printf "%3d) %s\n" "$((i+1))" "${SERVER_LIST[$i]}"
+done
+
+echo "=============================="
+read -p "Enter number to connect: " choice
+
+if [[ ! "$choice" =~ ^[0-9]+$ ]] || [[ "$choice" -lt 1 ]] || [[ "$choice" -gt "${#HOST_LIST[@]}" ]]; then
+    echo "❌ Invalid choice!"
+    exit 1
+fi
+
+SELECTED_SERVER="${HOST_LIST[$((choice-1))]}"
+
+echo "🔌 Connecting to $SELECTED_SERVER ..."
+ssh "$SELECTED_SERVER"
+
