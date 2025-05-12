@@ -1,0 +1,223 @@
+#!/bin/bash
+
+# === Settings ===
+PSQL_CMD="psql"
+PSQL_USER="postgres"
+CREATEDB_CMD="createdb"
+FILESTORE_DIR="$HOME/.local/share/Odoo/filestore"
+TEMP_DIR="/tmp/odoo_restore_$$" # $$ is the PID of the script
+
+# === Colors ===
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[0;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# === Functions ===
+cleanup() {
+    echo -e "${BLUE}Cleaning up temporary files...${NC}"
+    rm -rf "$TEMP_DIR"
+    echo -e "${GREEN}✓ Cleanup complete${NC}"
+}
+
+# Set up trap to clean up on exit
+trap cleanup EXIT
+
+# Check if required commands are available
+check_dependencies() {
+    # Check for PostgreSQL client
+    if ! command -v $PSQL_CMD &> /dev/null; then
+        echo -e "${RED}❌ PostgreSQL client not found. Please install PostgreSQL.${NC}"
+        exit 1
+    fi
+
+    # Check for createdb
+    if ! command -v $CREATEDB_CMD &> /dev/null; then
+        echo -e "${RED}❌ createdb command not found. Please install PostgreSQL.${NC}"
+        exit 1
+    fi
+
+    # Check for unzip
+    if ! command -v unzip &> /dev/null; then
+        echo -e "${RED}❌ unzip command not found. Please install unzip.${NC}"
+        exit 1
+    fi
+}
+
+# Check if we can connect to PostgreSQL
+check_postgres_connection() {
+    if ! $PSQL_CMD -U $PSQL_USER -c '\l' &> /dev/null; then
+        echo -e "${RED}❌ Cannot connect to PostgreSQL. Please check your credentials.${NC}"
+        echo -e "If you need to use a different PostgreSQL user, edit the PSQL_USER variable in this script."
+        exit 1
+    fi
+}
+
+# === Main ===
+echo -e "${BLUE}==================================================${NC}"
+echo -e "${BLUE}      Odoo Database Restore Tool                  ${NC}"
+echo -e "${BLUE}==================================================${NC}"
+
+# Check dependencies
+check_dependencies
+check_postgres_connection
+
+# Ask for backup file
+echo -e "${BLUE}Please provide the path to your Odoo backup file (.zip):${NC}"
+read -p "Backup file path: " BACKUP_FILE
+
+# Validate backup file
+if [[ ! -f "$BACKUP_FILE" ]]; then
+    echo -e "${RED}❌ File not found: $BACKUP_FILE${NC}"
+    exit 1
+fi
+
+if [[ ! "$BACKUP_FILE" == *.zip ]]; then
+    echo -e "${RED}❌ Only .zip backup files are supported at this time.${NC}"
+    exit 1
+fi
+
+# Ask for database name
+echo -e "${BLUE}Please provide a name for the restored database:${NC}"
+read -p "Database name: " DB_NAME
+
+# Validate database name
+if [[ -z "$DB_NAME" ]]; then
+    echo -e "${RED}❌ Database name cannot be empty.${NC}"
+    exit 1
+fi
+
+# Check if database already exists
+if $PSQL_CMD -U $PSQL_USER -lqt | cut -d \| -f 1 | grep -qw "$DB_NAME"; then
+    echo -e "${RED}❌ Database '$DB_NAME' already exists.${NC}"
+    read -p "Do you want to drop it and continue? (y/N): " CONFIRM
+    if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+        echo -e "${YELLOW}Operation cancelled.${NC}"
+        exit 0
+    fi
+    
+    echo -e "${BLUE}Dropping existing database '$DB_NAME'...${NC}"
+    if ! $PSQL_CMD -U $PSQL_USER -c "DROP DATABASE \"$DB_NAME\";" 2>/dev/null; then
+        echo -e "${RED}❌ Failed to drop database '$DB_NAME'.${NC}"
+        echo -e "${YELLOW}This could be because the database is in use or you don't have sufficient permissions.${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Existing database dropped${NC}"
+fi
+
+# Create temporary directory
+echo -e "${BLUE}Creating temporary directory...${NC}"
+mkdir -p "$TEMP_DIR"
+echo -e "${GREEN}✓ Temporary directory created${NC}"
+
+# Extract backup file
+echo -e "${BLUE}Extracting backup file...${NC}"
+if ! unzip -q "$BACKUP_FILE" -d "$TEMP_DIR"; then
+    echo -e "${RED}❌ Failed to extract backup file.${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Backup file extracted${NC}"
+
+# Verify backup contents
+if [[ ! -f "$TEMP_DIR/dump.sql" ]]; then
+    echo -e "${RED}❌ Invalid backup: dump.sql file not found in the backup.${NC}"
+    exit 1
+fi
+
+if [[ ! -d "$TEMP_DIR/filestore" ]]; then
+    echo -e "${YELLOW}⚠️ Warning: filestore directory not found in the backup.${NC}"
+    echo -e "${YELLOW}The database will be restored without filestore data.${NC}"
+    HAS_FILESTORE=false
+else
+    HAS_FILESTORE=true
+fi
+
+# Create the database
+echo -e "${BLUE}Creating new database '$DB_NAME'...${NC}"
+if ! $CREATEDB_CMD -U $PSQL_USER "$DB_NAME"; then
+    echo -e "${RED}❌ Failed to create database '$DB_NAME'.${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Database created${NC}"
+
+# Restore the database
+echo -e "${BLUE}Restoring database from dump...${NC}"
+if ! $PSQL_CMD -U $PSQL_USER -d "$DB_NAME" -f "$TEMP_DIR/dump.sql" > /dev/null 2>&1; then
+    echo -e "${RED}❌ Failed to restore database from dump.${NC}"
+    echo -e "${YELLOW}Dropping the partially restored database...${NC}"
+    $PSQL_CMD -U $PSQL_USER -c "DROP DATABASE \"$DB_NAME\";" > /dev/null 2>&1
+    exit 1
+fi
+echo -e "${GREEN}✓ Database restored successfully${NC}"
+
+# Restore filestore if available
+if [[ "$HAS_FILESTORE" == true ]]; then
+    echo -e "${BLUE}Setting up filestore...${NC}"
+    
+    # Create filestore directory if it doesn't exist
+    mkdir -p "$FILESTORE_DIR"
+    
+    # Remove existing filestore if it exists
+    if [[ -d "$FILESTORE_DIR/$DB_NAME" ]]; then
+        echo -e "${YELLOW}⚠️ Existing filestore found. Removing...${NC}"
+        rm -rf "$FILESTORE_DIR/$DB_NAME"
+    fi
+    
+    # Copy filestore
+    echo -e "${BLUE}Copying filestore data...${NC}"
+    if ! cp -r "$TEMP_DIR/filestore" "$FILESTORE_DIR/$DB_NAME"; then
+        echo -e "${RED}❌ Failed to copy filestore data.${NC}"
+        echo -e "${YELLOW}Database was restored but without filestore data.${NC}"
+    else
+        echo -e "${GREEN}✓ Filestore data copied successfully${NC}"
+    fi
+fi
+
+# Post-restore configuration
+echo -e "${BLUE}==================================================${NC}"
+echo -e "${GREEN}Database '$DB_NAME' has been successfully restored!${NC}"
+echo -e "${BLUE}==================================================${NC}"
+echo -e "${YELLOW}Would you like to perform additional configurations?${NC}"
+echo
+
+# Deactivate cron jobs
+read -p "Deactivate all cron jobs? (y/N): " DEACTIVATE_CRON
+if [[ "$DEACTIVATE_CRON" == "y" || "$DEACTIVATE_CRON" == "Y" ]]; then
+    echo -e "${BLUE}Deactivating cron jobs...${NC}"
+    if $PSQL_CMD -U $PSQL_USER -d "$DB_NAME" -c "UPDATE ir_cron SET active='f' WHERE active='t';" > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ All cron jobs have been deactivated${NC}"
+    else
+        echo -e "${RED}❌ Failed to deactivate cron jobs${NC}"
+    fi
+fi
+
+# Deactivate email servers
+read -p "Deactivate all email servers? (y/N): " DEACTIVATE_EMAIL
+if [[ "$DEACTIVATE_EMAIL" == "y" || "$DEACTIVATE_EMAIL" == "Y" ]]; then
+    echo -e "${BLUE}Deactivating email servers...${NC}"
+    if $PSQL_CMD -U $PSQL_USER -d "$DB_NAME" -c "UPDATE ir_mail_server SET active='f' WHERE active='t';" > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ All email servers have been deactivated${NC}"
+    else
+        echo -e "${RED}❌ Failed to deactivate email servers${NC}"
+    fi
+fi
+
+# Reset admin password
+read -p "Reset admin user to login='admin', password='admin'? (y/N): " RESET_ADMIN
+if [[ "$RESET_ADMIN" == "y" || "$RESET_ADMIN" == "Y" ]]; then
+    echo -e "${BLUE}Resetting admin credentials...${NC}"
+    if $PSQL_CMD -U $PSQL_USER -d "$DB_NAME" -c "UPDATE res_users SET login='admin', password='admin', active='t' WHERE id=2;" > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Admin credentials have been reset${NC}"
+        echo -e "${YELLOW}You can now log in with username 'admin' and password 'admin'${NC}"
+    else
+        echo -e "${RED}❌ Failed to reset admin credentials${NC}"
+    fi
+fi
+
+echo -e "${BLUE}==================================================${NC}"
+echo -e "${GREEN}✅ Database restoration complete!${NC}"
+echo -e "${BLUE}==================================================${NC}"
+echo -e "Database name: ${GREEN}$DB_NAME${NC}"
+echo -e "Filestore path: ${GREEN}$FILESTORE_DIR/$DB_NAME${NC}"
+echo -e "${BLUE}==================================================${NC}"
