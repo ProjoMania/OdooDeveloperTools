@@ -90,6 +90,70 @@ install_scripts() {
     cp OdooDevTools "$INSTALL_DIR/"
     echo -e "${GREEN}✓ Copied OdooDevTools${NC}"
     
+    # Install dependencies
+    echo -e "${BLUE}Checking for dependencies...${NC}"
+    
+    # Detect the Linux distribution
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        DISTRO=$ID
+    elif [ -f /etc/lsb-release ]; then
+        . /etc/lsb-release
+        DISTRO=$DISTRIB_ID
+    elif [ -f /etc/debian_version ]; then
+        DISTRO="debian"
+    elif [ -f /etc/fedora-release ]; then
+        DISTRO="fedora"
+    elif [ -f /etc/redhat-release ]; then
+        DISTRO="rhel"
+    else
+        DISTRO="unknown"
+    fi
+    
+    # Convert to lowercase
+    DISTRO=$(echo "$DISTRO" | tr '[:upper:]' '[:lower:]')
+    
+    # Install dialog based on the distribution
+    if ! command -v dialog &> /dev/null; then
+        echo -e "${YELLOW}Installing dialog package...${NC}"
+        
+        case "$DISTRO" in
+            "ubuntu"|"debian"|"pop"|"mint"|"elementary")
+                sudo apt-get update -qq && sudo apt-get install -y dialog
+                ;;
+            "fedora")
+                sudo dnf install -y dialog
+                ;;
+            "centos"|"rhel"|"rocky"|"almalinux")
+                sudo yum install -y dialog
+                ;;
+            "arch"|"manjaro")
+                sudo pacman -S --noconfirm dialog
+                ;;
+            "opensuse"|"suse")
+                sudo zypper install -y dialog
+                ;;
+            *)
+                echo -e "${RED}Could not determine your distribution. Please install 'dialog' manually:${NC}"
+                echo -e "For Debian/Ubuntu: sudo apt-get install dialog"
+                echo -e "For Fedora: sudo dnf install dialog"
+                echo -e "For CentOS/RHEL: sudo yum install dialog"
+                echo -e "For Arch Linux: sudo pacman -S dialog"
+                echo -e "For openSUSE: sudo zypper install dialog"
+                ;;
+        esac
+        
+        # Check if dialog was installed successfully
+        if command -v dialog &> /dev/null; then
+            echo -e "${GREEN}✓ Dialog installed successfully${NC}"
+        else
+            echo -e "${YELLOW}Warning: Dialog installation may have failed. The TUI menu may not work.${NC}"
+            echo -e "${YELLOW}You can still use individual tools directly.${NC}"
+        fi
+    else
+        echo -e "${GREEN}✓ Dialog is already installed${NC}"
+    fi
+    
     # Make scripts executable
     echo -e "${BLUE}Adding execute permissions...${NC}"
     chmod u+x "$INSTALL_DIR"/*

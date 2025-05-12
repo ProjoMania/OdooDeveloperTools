@@ -17,10 +17,57 @@ NC='\033[0m' # No Color
 check_dialog() {
     if ! command -v dialog &> /dev/null; then
         echo -e "${YELLOW}Dialog is not installed. Installing...${NC}"
-        sudo apt-get update && sudo apt-get install -y dialog
+        
+        # Detect the Linux distribution
+        if [ -f /etc/os-release ]; then
+            . /etc/os-release
+            DISTRO=$ID
+        elif [ -f /etc/lsb-release ]; then
+            . /etc/lsb-release
+            DISTRO=$DISTRIB_ID
+        elif [ -f /etc/debian_version ]; then
+            DISTRO="debian"
+        elif [ -f /etc/fedora-release ]; then
+            DISTRO="fedora"
+        elif [ -f /etc/redhat-release ]; then
+            DISTRO="rhel"
+        else
+            DISTRO="unknown"
+        fi
+        
+        # Convert to lowercase
+        DISTRO=$(echo "$DISTRO" | tr '[:upper:]' '[:lower:]')
+        
+        # Install dialog based on the distribution
+        case "$DISTRO" in
+            "ubuntu"|"debian"|"pop"|"mint"|"elementary")
+                sudo apt-get update -qq && sudo apt-get install -y dialog
+                ;;
+            "fedora")
+                sudo dnf install -y dialog
+                ;;
+            "centos"|"rhel"|"rocky"|"almalinux")
+                sudo yum install -y dialog
+                ;;
+            "arch"|"manjaro")
+                sudo pacman -S --noconfirm dialog
+                ;;
+            "opensuse"|"suse")
+                sudo zypper install -y dialog
+                ;;
+            *)
+                echo -e "${RED}Could not determine your distribution. Please install 'dialog' manually:${NC}"
+                echo -e "For Debian/Ubuntu: sudo apt-get install dialog"
+                echo -e "For Fedora: sudo dnf install dialog"
+                echo -e "For CentOS/RHEL: sudo yum install dialog"
+                echo -e "For Arch Linux: sudo pacman -S dialog"
+                echo -e "For openSUSE: sudo zypper install dialog"
+                exit 1
+                ;;
+        esac
+        
         if [ $? -ne 0 ]; then
-            echo -e "${RED}Failed to install dialog. Please install it manually:${NC}"
-            echo -e "sudo apt-get install dialog"
+            echo -e "${RED}Failed to install dialog. Please install it manually.${NC}"
             exit 1
         fi
     fi
