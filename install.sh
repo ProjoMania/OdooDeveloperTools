@@ -84,6 +84,9 @@ install_scripts() {
     cp RestoreOdooDatabase "$INSTALL_DIR/"
     echo -e "${GREEN}✓ Copied RestoreOdooDatabase${NC}"
     
+    cp ExtendOdooEnterprise "$INSTALL_DIR/"
+    echo -e "${GREEN}✓ Copied ExtendOdooEnterprise${NC}"
+    
     # Make scripts executable
     echo -e "${BLUE}Adding execute permissions...${NC}"
     chmod u+x "$INSTALL_DIR"/*
@@ -168,6 +171,7 @@ echo -e "  ${GREEN}ListSSHServers${NC}    - List all configured SSH servers"
 echo -e "  ${GREEN}ListOdooDatabases${NC} - List all local Odoo databases"
 echo -e "  ${GREEN}DropOdooDatabase${NC}  - Remove an Odoo database and its filestore"
 echo -e "  ${GREEN}RestoreOdooDatabase${NC} - Restore an Odoo database from a backup file"
+echo -e "  ${GREEN}ExtendOdooEnterprise${NC} - Find and extend Odoo Enterprise databases"
 echo -e "${BLUE}==================================================${NC}"
 echo -e "${YELLOW}To start using the tools, run: source ~/.bashrc${NC}"
 echo -e "${BLUE}==================================================${NC}"

@@ -14,6 +14,7 @@ A collection of command-line utilities to simplify Odoo development and server m
   - Show database size, filestore size, and Odoo version
   - Drop databases and their filestores
   - Restore databases from backup files
+  - Extend Odoo Enterprise license expiration dates
 
 ## Installation
 
@@ -109,6 +110,12 @@ Restores an Odoo database from a backup file (.zip), with options to:
 - Deactivate cron jobs
 - Deactivate email servers
 - Reset admin credentials
+
+#### Extend Odoo Enterprise license
+```bash
+ExtendOdooEnterprise
+```
+Finds all Odoo Enterprise databases and allows you to extend their license expiration date by 20 days.
 
 ## Customization
 

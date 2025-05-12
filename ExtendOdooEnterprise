@@ -1,0 +1,199 @@
+#!/bin/bash
+
+# === Settings ===
+PSQL_CMD="psql"
+PSQL_USER="postgres"
+FILESTORE_DIR="$HOME/.local/share/Odoo/filestore"
+
+# === Colors ===
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[0;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# Check if psql is installed
+if ! command -v $PSQL_CMD &> /dev/null; then
+    echo -e "${RED}❌ PostgreSQL client not found. Please install PostgreSQL.${NC}"
+    exit 1
+fi
+
+# Check if we can connect to PostgreSQL
+if ! $PSQL_CMD -U $PSQL_USER -c '\l' &> /dev/null; then
+    echo -e "${RED}❌ Cannot connect to PostgreSQL. Please check your credentials.${NC}"
+    echo -e "If you need to use a different PostgreSQL user, edit the PSQL_USER variable in this script."
+    exit 1
+fi
+
+# Function to format date
+format_date() {
+    local date_str=$1
+    if [[ -z "$date_str" ]]; then
+        echo "Not set"
+    else
+        echo "$date_str"
+    fi
+}
+
+# Function to calculate future date (20 days from now)
+calculate_future_date() {
+    # Get current date in YYYY-MM-DD HH:MM:SS format
+    local future_date=$(date -d "+20 days" +%Y-%m-%d\ %H:%M:%S)
+    echo "$future_date"
+}
+
+# Get list of Odoo databases
+echo -e "${BLUE}==================================================${NC}"
+echo -e "${BLUE}      Odoo Enterprise License Manager              ${NC}"
+echo -e "${BLUE}==================================================${NC}"
+echo -e "${YELLOW}Finding Odoo Enterprise databases...${NC}"
+echo
+
+# Create a temporary file to store database information
+temp_file=$(mktemp)
+
+# Get database list
+$PSQL_CMD -U $PSQL_USER -t -A -F'|' -c "
+    SELECT 
+        d.datname AS database_name
+    FROM 
+        pg_database d
+    WHERE 
+        d.datname NOT IN ('postgres', 'template0', 'template1')
+    ORDER BY 
+        d.datname;
+" > "$temp_file"
+
+# Initialize arrays
+DB_LIST=()
+VERSION_LIST=()
+EXPIRY_LIST=()
+ENTERPRISE_DBS=0
+
+# Table header
+printf "%-4s %-30s %-15s %-20s\n" "Num" "DB Name" "Odoo Version" "Expiry Date"
+printf "%-4s %-30s %-15s %-20s\n" "---" "$(printf '%0.s-' {1..30})" "$(printf '%0.s-' {1..15})" "$(printf '%0.s-' {1..20})"
+
+# Process each database
+counter=1
+while IFS='|' read -r db_name; do
+    # Clean up the output (remove leading/trailing whitespace)
+    db_name=$(echo "$db_name" | xargs)
+    
+    # Check if the database has the web_enterprise module installed
+    has_enterprise=$($PSQL_CMD -U $PSQL_USER -d "$db_name" -t -A -c "
+        SELECT COUNT(*) 
+        FROM information_schema.tables 
+        WHERE table_name='ir_module_module'
+    " 2>/dev/null)
+    
+    if [[ "$has_enterprise" -eq "1" ]]; then
+        is_enterprise=$($PSQL_CMD -U $PSQL_USER -d "$db_name" -t -A -c "
+            SELECT COUNT(*) 
+            FROM ir_module_module 
+            WHERE name='web_enterprise' AND state='installed'
+        " 2>/dev/null)
+        
+        if [[ "$is_enterprise" -eq "1" ]]; then
+            # Get Odoo version
+            version=$($PSQL_CMD -U $PSQL_USER -d "$db_name" -t -A -c "
+                SELECT latest_version 
+                FROM ir_module_module 
+                WHERE name='base' 
+                LIMIT 1
+            " 2>/dev/null)
+            
+            # Get expiration date
+            expiry_date=$($PSQL_CMD -U $PSQL_USER -d "$db_name" -t -A -c "
+                SELECT value 
+                FROM ir_config_parameter 
+                WHERE key ILIKE '%expiration_date%' 
+                LIMIT 1
+            " 2>/dev/null)
+            
+            # Format the version and expiry date
+            version=$(echo "$version" | xargs)
+            expiry_date=$(format_date "$expiry_date")
+            
+            # Store database info
+            DB_LIST+=("$db_name")
+            VERSION_LIST+=("$version")
+            EXPIRY_LIST+=("$expiry_date")
+            
+            # Print the row
+            printf "%-4s %-30s %-15s %-20s\n" "$counter" "$db_name" "$version" "$expiry_date"
+            
+            ((counter++))
+            ((ENTERPRISE_DBS++))
+        fi
+    fi
+done < "$temp_file"
+
+# Clean up the temporary file
+rm -f "$temp_file"
+
+# If no enterprise databases found
+if [[ $ENTERPRISE_DBS -eq 0 ]]; then
+    echo -e "${YELLOW}No Odoo Enterprise databases found.${NC}"
+    exit 0
+fi
+
+echo
+echo -e "${BLUE}==================================================${NC}"
+echo -e "${GREEN}Found $ENTERPRISE_DBS Odoo Enterprise databases.${NC}"
+echo -e "${BLUE}==================================================${NC}"
+read -p "Enter the number of the database to extend (or 'q' to quit): " choice
+
+# Check if user wants to quit
+if [[ "$choice" == "q" || "$choice" == "Q" ]]; then
+    echo -e "${BLUE}Operation cancelled. No changes were made.${NC}"
+    exit 0
+fi
+
+# Validate input
+if ! [[ "$choice" =~ ^[0-9]+$ ]] || [[ "$choice" -lt 1 ]] || [[ "$choice" -gt $ENTERPRISE_DBS ]]; then
+    echo -e "${RED}❌ Invalid selection. Please enter a number between 1 and $ENTERPRISE_DBS.${NC}"
+    exit 1
+fi
+
+# Get the selected database
+selected_db="${DB_LIST[$((choice-1))]}"
+current_expiry="${EXPIRY_LIST[$((choice-1))]}"
+
+# Calculate new expiration date (20 days from now)
+new_expiry=$(calculate_future_date)
+
+# Confirm with the user
+echo -e "${BLUE}==================================================${NC}"
+echo -e "Selected database: ${GREEN}$selected_db${NC}"
+echo -e "Current expiry date: ${YELLOW}$current_expiry${NC}"
+echo -e "New expiry date: ${GREEN}$new_expiry${NC}"
+echo -e "${BLUE}==================================================${NC}"
+read -p "Do you want to update the expiry date? (y/N): " confirm
+
+if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+    echo -e "${BLUE}Operation cancelled. No changes were made.${NC}"
+    exit 0
+fi
+
+# Update the expiration date
+echo -e "${BLUE}Updating expiration date...${NC}"
+update_result=$($PSQL_CMD -U $PSQL_USER -d "$selected_db" -t -c "
+    UPDATE ir_config_parameter 
+    SET value='$new_expiry' 
+    WHERE key ILIKE '%expiration_date%'
+    RETURNING key;
+" 2>&1)
+
+if [[ $? -eq 0 && -n "$update_result" ]]; then
+    echo -e "${GREEN}✅ Successfully updated expiration date to $new_expiry${NC}"
+    echo -e "${YELLOW}Note: You may need to restart the Odoo server for changes to take effect.${NC}"
+else
+    echo -e "${RED}❌ Failed to update expiration date.${NC}"
+    echo -e "${RED}Error: $update_result${NC}"
+    exit 1
+fi
+
+echo -e "${BLUE}==================================================${NC}"
+echo -e "${GREEN}Operation completed successfully!${NC}"
+echo -e "${BLUE}==================================================${NC}"
