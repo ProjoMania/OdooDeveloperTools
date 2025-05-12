@@ -132,6 +132,21 @@ Provides a Text User Interface (TUI) menu system for accessing all tools in the 
 - Help and about information
 - Requires the `dialog` package (automatically installed if missing)
 
+## Screenshots
+
+### Interactive TUI Menu
+
+![OdooDevTools Main Menu](screenshots/odoodevtools_main.png)
+*The main menu of the OdooDevTools TUI*
+
+![Database Management Menu](screenshots/database_menu.png)
+*Database management options in the TUI*
+
+### SSH Server Management
+
+![SSH Servers List](screenshots/ssh_servers.png)
+*List of configured SSH servers*
+
 ## Customization
 
 You can customize the tools by editing the configuration variables at the top of each script:
