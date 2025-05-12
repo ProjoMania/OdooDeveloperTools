@@ -77,13 +77,13 @@ Follow the prompts to add a new SSH server configuration.
 
 #### List all SSH servers
 ```bash
-listssh
+ListSSHServers
 ```
 Displays a table of all configured SSH servers with their details.
 
 #### Connect to an SSH server
 ```bash
-connectssh
+ConnectSSHServer
 ```
 Shows a menu of available servers and connects to your selection.
 
