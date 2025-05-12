@@ -16,6 +16,11 @@ A collection of command-line utilities to simplify Odoo development and server m
   - Restore databases from backup files
   - Extend Odoo Enterprise license expiration dates
 
+- **Interactive TUI Menu**
+  - Navigate all tools through a user-friendly interface
+  - Organized categories for easier access
+  - Dialog-based menu system
+
 ## Installation
 
 ### Automatic Installation
@@ -116,6 +121,16 @@ Restores an Odoo database from a backup file (.zip), with options to:
 ExtendOdooEnterprise
 ```
 Finds all Odoo Enterprise databases and allows you to extend their license expiration date by 20 days.
+
+#### Interactive TUI Menu
+```bash
+OdooDevTools
+```
+Provides a Text User Interface (TUI) menu system for accessing all tools in the collection. Features include:
+- Organized categories for SSH and Database management
+- Easy navigation with keyboard
+- Help and about information
+- Requires the `dialog` package (automatically installed if missing)
 
 ## Customization
 
