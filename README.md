@@ -71,7 +71,7 @@ If you prefer to install manually:
 
 #### Add a new SSH server
 ```bash
-addssh
+AddSSHServer
 ```
 Follow the prompts to add a new SSH server configuration.
 
