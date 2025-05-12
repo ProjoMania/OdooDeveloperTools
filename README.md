@@ -12,6 +12,8 @@ A collection of command-line utilities to simplify Odoo development and server m
 - **Odoo Database Management**
   - List all local Odoo databases with details
   - Show database size, filestore size, and Odoo version
+  - Drop databases and their filestores
+  - Restore databases from backup files
 
 ## Installation
 
@@ -89,9 +91,24 @@ Shows a menu of available servers and connects to your selection.
 
 #### List all Odoo databases
 ```bash
-listodb
+ListOdooDatabases
 ```
 Displays a table of all local Odoo databases with their name, owner, version, database size, and filestore size.
+
+#### Drop an Odoo database
+```bash
+DropOdooDatabase
+```
+Shows a menu of available databases and allows you to select one to drop, including its filestore.
+
+#### Restore an Odoo database
+```bash
+RestoreOdooDatabase
+```
+Restores an Odoo database from a backup file (.zip), with options to:
+- Deactivate cron jobs
+- Deactivate email servers
+- Reset admin credentials
 
 ## Customization
 
