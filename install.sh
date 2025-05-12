@@ -78,6 +78,9 @@ install_scripts() {
     cp ListOdooDatabases "$INSTALL_DIR/"
     echo -e "${GREEN}✓ Copied ListOdooDatabases${NC}"
     
+    cp DropOdooDatabase "$INSTALL_DIR/"
+    echo -e "${GREEN}✓ Copied DropOdooDatabase${NC}"
+    
     # Make scripts executable
     echo -e "${BLUE}Adding execute permissions...${NC}"
     chmod u+x "$INSTALL_DIR"/*
@@ -160,6 +163,7 @@ echo -e "  ${GREEN}AddSSHServer${NC}      - Add a new SSH server configuration"
 echo -e "  ${GREEN}ConnectSSHServer${NC}  - Connect to a configured SSH server"
 echo -e "  ${GREEN}ListSSHServers${NC}    - List all configured SSH servers"
 echo -e "  ${GREEN}ListOdooDatabases${NC} - List all local Odoo databases"
+echo -e "  ${GREEN}DropOdooDatabase${NC}  - Remove an Odoo database and its filestore"
 echo -e "${BLUE}==================================================${NC}"
 echo -e "${YELLOW}To start using the tools, run: source ~/.bashrc${NC}"
 echo -e "${BLUE}==================================================${NC}"

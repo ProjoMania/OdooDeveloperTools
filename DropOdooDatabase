@@ -1,0 +1,177 @@
+#!/bin/bash
+
+# === Settings ===
+PSQL_CMD="psql"
+PSQL_USER="postgres"
+FILESTORE_DIR="$HOME/.local/share/Odoo/filestore"
+
+# === Colors ===
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[0;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# Check if psql is installed
+if ! command -v $PSQL_CMD &> /dev/null; then
+    echo -e "${RED}❌ PostgreSQL client not found. Please install PostgreSQL.${NC}"
+    exit 1
+fi
+
+# Check if we can connect to PostgreSQL
+if ! $PSQL_CMD -U $PSQL_USER -c '\l' &> /dev/null; then
+    echo -e "${RED}❌ Cannot connect to PostgreSQL. Please check your credentials.${NC}"
+    echo -e "If you need to use a different PostgreSQL user, edit the PSQL_USER variable in this script."
+    exit 1
+fi
+
+# Function to format size
+format_size() {
+    local size_bytes=$1
+    
+    if (( size_bytes > 1073741824 )); then
+        printf "%.2f GB" $(echo "$size_bytes/1073741824" | bc -l)
+    else
+        printf "%.2f MB" $(echo "$size_bytes/1048576" | bc -l)
+    fi
+}
+
+# Get list of Odoo databases
+echo -e "${BLUE}==================================================${NC}"
+echo -e "${BLUE}      Odoo Database Removal Tool                  ${NC}"
+echo -e "${BLUE}==================================================${NC}"
+echo -e "${YELLOW}WARNING: This will permanently delete the selected database and its filestore!${NC}"
+echo -e "${YELLOW}         This action cannot be undone.${NC}"
+echo
+
+# Get database list and information
+echo -e "${BLUE}Loading databases...${NC}"
+echo
+
+# Create a temporary file to store database information
+temp_file=$(mktemp)
+
+# Table header
+printf "%-4s %-30s %-15s %-30s\n" "Num" "DB Name" "DB Size" "Filestore Path"
+printf "%-4s %-30s %-15s %-30s\n" "---" "$(printf '%0.s-' {1..30})" "$(printf '%0.s-' {1..15})" "$(printf '%0.s-' {1..30})"
+
+# Get database list
+counter=1
+
+# Get the list of databases
+$PSQL_CMD -U $PSQL_USER -t -A -F'|' -c "
+    SELECT 
+        d.datname AS database_name, 
+        pg_database_size(d.datname) AS size_bytes
+    FROM 
+        pg_database d
+    WHERE 
+        d.datname NOT IN ('postgres', 'template0', 'template1')
+    ORDER BY 
+        d.datname;
+" > "$temp_file"
+
+# Initialize arrays
+DB_LIST=()
+FILESTORE_PATHS=()
+DB_SIZES=()
+
+# Process each database
+while IFS='|' read -r db_name size_bytes; do
+    # Clean up the output (remove leading/trailing whitespace)
+    db_name=$(echo "$db_name" | xargs)
+    size_bytes=$(echo "$size_bytes" | xargs)
+    
+    # Format database size
+    db_size=$(format_size "$size_bytes")
+    
+    # Check if there's a filestore
+    filestore_path="$FILESTORE_DIR/$db_name"
+    if [[ -d "$filestore_path" ]]; then
+        filestore_status="$filestore_path"
+    else
+        filestore_status="No filestore found"
+    fi
+    
+    # Store database info
+    DB_LIST+=("$db_name")
+    FILESTORE_PATHS+=("$filestore_path")
+    DB_SIZES+=("$db_size")
+    
+    # Print the row
+    printf "%-4s %-30s %-15s %-30s\n" "$counter" "$db_name" "$db_size" "$filestore_status"
+    
+    ((counter++))
+done < "$temp_file"
+
+# Clean up the temporary file
+rm -f "$temp_file"
+
+# Save the counter value to know how many databases we have
+total_dbs=$((counter - 1))
+
+# If no databases found
+if [ $total_dbs -eq 0 ]; then
+    echo -e "${YELLOW}No Odoo databases found.${NC}"
+    exit 0
+fi
+
+echo
+echo -e "${BLUE}==================================================${NC}"
+read -p "Enter the number of the database to drop (or 'q' to quit): " choice
+
+# Check if user wants to quit
+if [[ "$choice" == "q" || "$choice" == "Q" ]]; then
+    echo -e "${BLUE}Operation cancelled. No databases were dropped.${NC}"
+    exit 0
+fi
+
+# Validate input
+if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt $total_dbs ]; then
+    echo -e "${RED}❌ Invalid selection. Please enter a number between 1 and $total_dbs.${NC}"
+    exit 1
+fi
+
+# Get the selected database info
+selected_db="${DB_LIST[$((choice-1))]}" 
+selected_filestore="${FILESTORE_PATHS[$((choice-1))]}"
+
+# Double-check with the user
+echo -e "${RED}WARNING: You are about to drop the database '$selected_db'${NC}"
+if [[ -d "$selected_filestore" ]]; then
+    echo -e "${RED}         The filestore at '$selected_filestore' will also be deleted.${NC}"
+fi
+echo -e "${RED}         This action CANNOT be undone!${NC}"
+echo
+
+read -p "Are you absolutely sure? Type 'YES' to confirm: " confirmation
+
+if [[ "$confirmation" != "YES" ]]; then
+    echo -e "${BLUE}Operation cancelled. No databases were dropped.${NC}"
+    exit 0
+fi
+
+# Drop the database
+echo -e "${BLUE}Dropping database '$selected_db'...${NC}"
+if $PSQL_CMD -U $PSQL_USER -c "DROP DATABASE \"$selected_db\";" 2>/dev/null; then
+    echo -e "${GREEN}✓ Database '$selected_db' dropped successfully.${NC}"
+else
+    echo -e "${RED}❌ Failed to drop database '$selected_db'.${NC}"
+    echo -e "${YELLOW}This could be because the database is in use or you don't have sufficient permissions.${NC}"
+    exit 1
+fi
+
+# Delete the filestore if it exists
+if [[ -d "$selected_filestore" ]]; then
+    echo -e "${BLUE}Deleting filestore at '$selected_filestore'...${NC}"
+    if rm -rf "$selected_filestore"; then
+        echo -e "${GREEN}✓ Filestore deleted successfully.${NC}"
+    else
+        echo -e "${RED}❌ Failed to delete filestore.${NC}"
+        echo -e "${YELLOW}The database was dropped, but you may need to manually delete the filestore.${NC}"
+        exit 1
+    fi
+fi
+
+echo
+echo -e "${GREEN}✅ Database '$selected_db' and its filestore have been completely removed.${NC}"
