@@ -1,0 +1,97 @@
+#!/bin/bash
+
+# === Settings ===
+PSQL_CMD="psql"
+PSQL_USER="postgres"
+FILESTORE_DIR="$HOME/.local/share/Odoo/filestore"
+
+# === Colors ===
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[0;33m'
+NC='\033[0m' # No Color
+
+# Check if psql is installed
+if ! command -v $PSQL_CMD &> /dev/null; then
+    echo "❌ PostgreSQL client not found. Please install PostgreSQL."
+    exit 1
+fi
+
+# Check if we can connect to PostgreSQL
+if ! $PSQL_CMD -U $PSQL_USER -c '\l' &> /dev/null; then
+    echo "❌ Cannot connect to PostgreSQL. Please check your credentials."
+    echo "If you need to use a different PostgreSQL user, edit the PSQL_USER variable in this script."
+    exit 1
+fi
+
+# Check if filestore directory exists
+if [[ ! -d "$FILESTORE_DIR" ]]; then
+    echo "⚠️ Warning: Filestore directory not found at $FILESTORE_DIR"
+    echo "If your filestore is in a different location, please edit the FILESTORE_DIR variable in this script."
+    echo "Will continue without filestore size information."
+    SKIP_FILESTORE=true
+fi
+
+# Function to format size
+format_size() {
+    local size_bytes=$1
+    
+    if (( size_bytes > 1073741824 )); then
+        printf "%.2f GB" $(echo "$size_bytes/1073741824" | bc -l)
+    else
+        printf "%.2f MB" $(echo "$size_bytes/1048576" | bc -l)
+    fi
+}
+
+# Get list of Odoo databases
+echo -e "${BLUE}Fetching Odoo databases...${NC}"
+echo
+
+# Table header
+printf "%-30s %-20s %-15s %-15s %-15s\n" "DB Name" "Owner" "Odoo Version" "DB Size" "Filestore Size"
+printf "%-30s %-20s %-15s %-15s %-15s\n" "$(printf '%0.s-' {1..30})" "$(printf '%0.s-' {1..20})" "$(printf '%0.s-' {1..15})" "$(printf '%0.s-' {1..15})" "$(printf '%0.s-' {1..15})"
+
+# Get database list and information
+$PSQL_CMD -U $PSQL_USER -t -A -F'|' -c "
+    SELECT 
+        d.datname AS database_name, 
+        u.usename AS owner,
+        pg_database_size(d.datname) AS size_bytes
+    FROM 
+        pg_database d
+        JOIN pg_user u ON d.datdba = u.usesysid
+    WHERE 
+        d.datname NOT IN ('postgres', 'template0', 'template1')
+    ORDER BY 
+        d.datname;
+" | while IFS='|' read -r db_name owner size_bytes; do
+    # Clean up the output (remove leading/trailing whitespace)
+    db_name=$(echo "$db_name" | xargs)
+    owner=$(echo "$owner" | xargs)
+    size_bytes=$(echo "$size_bytes" | xargs)
+    
+    # Format database size
+    db_size=$(format_size "$size_bytes")
+    
+    # Get Odoo version by checking the base module
+    odoo_version="Not Odoo DB"
+    if $PSQL_CMD -U $PSQL_USER -d "$db_name" -c "SELECT 1 FROM information_schema.tables WHERE table_name='ir_module_module'" 2>/dev/null | grep -q "1 row"; then
+        # This is likely an Odoo database, try to get the version
+        version=$($PSQL_CMD -U $PSQL_USER -d "$db_name" -t -A -c "SELECT latest_version FROM ir_module_module WHERE name='base' LIMIT 1" 2>/dev/null)
+        if [[ -n "$version" ]]; then
+            odoo_version=$(echo "$version" | xargs)
+        fi
+    fi
+    
+    # Get filestore size if available
+    if [[ "$SKIP_FILESTORE" != true && -d "$FILESTORE_DIR/$db_name" ]]; then
+        filestore_bytes=$(du -sb "$FILESTORE_DIR/$db_name" 2>/dev/null | cut -f1)
+        filestore_size=$(format_size "$filestore_bytes")
+    else
+        filestore_size="N/A"
+    fi
+    
+    # Print the row
+    printf "%-30s %-20s %-15s %-15s %-15s\n" "$db_name" "$owner" "$odoo_version" "$db_size" "$filestore_size"
+done
+
